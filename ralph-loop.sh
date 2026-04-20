@@ -79,6 +79,8 @@ if [[ -z "$max_iterations" ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOG_DIR="$(pwd)/ralph-logs"
+mkdir -p "$LOG_DIR"
 
 get_usage() {
     local output
@@ -111,8 +113,7 @@ for (( i=1; i<=max_iterations; i++ )); do
 
     iteration_start=$(date +%s)
 
-    output_file=$(mktemp)
-    trap "rm -f '$output_file'" EXIT
+    output_file="$LOG_DIR/ralph-$(date '+%Y%m%d-%H%M%S')-iter${i}.log"
 
     claude_args=(-p "$prompt" --output-format stream-json --verbose --include-partial-messages)
     if [[ -n "$auto_mode" ]]; then
@@ -167,14 +168,13 @@ for (( i=1; i<=max_iterations; i++ )); do
         ralph "Warning: claude exited with code $claude_exit"
     fi
 
-    if grep -q '<promise>COMPLETE</promise>' "$output_file"; then
+    if jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text' "$output_file" 2>/dev/null | grep -q '<promise>COMPLETE</promise>'; then
         ralph "Complete: promise COMPLETE received on iteration $i"
-        rm -f "$output_file"
+        ralph "Log file: $output_file"
         exit 0
     fi
 
-    ralph "Iteration $i complete (${duration}s)"
-    rm -f "$output_file"
+    ralph "Iteration $i complete (${duration}s) - log: $output_file"
 done
 
 ralph "Stopping: max iterations ($max_iterations) reached"
