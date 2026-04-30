@@ -100,6 +100,14 @@ if [[ -z "$logs_dir" ]]; then
     trap cleanup_temp_logs EXIT
 fi
 
+on_interrupt() {
+    echo
+    ralph "Interrupted, terminating claude..."
+    pkill -TERM -P $$ 2>/dev/null || true
+    exit 130
+}
+trap on_interrupt INT
+
 get_usage() {
     local output
     output=$("$SCRIPT_DIR/claude-usage.sh" 2>/dev/null)
