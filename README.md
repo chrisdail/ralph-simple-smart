@@ -93,6 +93,9 @@ These flags always evaluate to `true` in production. The flag checks are dead co
 # Run a fixed number of iterations
 ./ralph-loop.sh --max-iterations 5 @ralph.md
 
+# Persist iteration logs to a directory
+./ralph-loop.sh --logs ralph-logs @ralph.md
+
 ```
 
 ### Options
@@ -102,6 +105,7 @@ These flags always evaluate to `true` in production. The flag checks are dead co
 | `--auto-mode`             | Use auto permission mode (requires Team/Enterprise plan)            |
 | `--max-iterations N`      | Max loop iterations (default: 1, or 999 with `--max-session-usage`) |
 | `--max-session-usage PCT` | Stop when session usage reaches PCT%                                |
+| `--logs DIR`              | Save iteration logs to `DIR` (default: auto-removed temp files)     |
 
 ### Environment Variables
 
@@ -117,7 +121,7 @@ Claude signals completion by including `<promise>COMPLETE</promise>` in its resp
 
 ### `ralph-loop.sh`
 
-The main loop runner. Runs Claude repeatedly with usage monitoring, permission controls, and JSON logging. Logs are written to `ralph-logs/` in the working directory.
+The main loop runner. Runs Claude repeatedly with usage monitoring, permission controls, and JSON logging. By default, each iteration's output is written to a temp file that is removed when the script exits. Pass `--logs DIR` to persist per-iteration logs to a directory instead.
 
 ### `claude-usage.sh`
 

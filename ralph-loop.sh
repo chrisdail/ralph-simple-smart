@@ -24,6 +24,7 @@ show_usage() {
     echo "  --auto-mode                Use auto permission mode (requires Team/Enterprise plan)"
     echo "  --max-iterations N         Max loop iterations (default: 1, or 999 with --max-session-usage)"
     echo "  --max-session-usage PCT    Stop when session usage reaches PCT% (e.g. 70)"
+    echo "  --logs DIR                 Save iteration logs to DIR (default: auto-removed temp files)"
     echo "  -h, --help                 Show this help"
     echo ""
     echo "Environment:"
@@ -34,6 +35,7 @@ show_usage() {
 auto_mode=""
 max_iterations=""
 max_session_usage=""
+logs_dir=""
 prompt=""
 
 while [[ $# -gt 0 ]]; do
@@ -48,6 +50,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --max-session-usage)
             max_session_usage="$2"
+            shift 2
+            ;;
+        --logs)
+            logs_dir="$2"
             shift 2
             ;;
         -h|--help)
@@ -79,8 +85,20 @@ if [[ -z "$max_iterations" ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOG_DIR="$(pwd)/ralph-logs"
-mkdir -p "$LOG_DIR"
+
+if [[ -n "$logs_dir" ]]; then
+    mkdir -p "$logs_dir"
+fi
+
+temp_logs=()
+cleanup_temp_logs() {
+    for f in "${temp_logs[@]}"; do
+        [[ -f "$f" ]] && rm -f "$f"
+    done
+}
+if [[ -z "$logs_dir" ]]; then
+    trap cleanup_temp_logs EXIT
+fi
 
 get_usage() {
     local output
@@ -113,19 +131,26 @@ for (( i=1; i<=max_iterations; i++ )); do
 
     iteration_start=$(date +%s)
 
-    output_file="$LOG_DIR/ralph-$(date '+%Y%m%d-%H%M%S')-iter${i}.log"
+    if [[ -n "$logs_dir" ]]; then
+        output_file="$logs_dir/ralph-$(date '+%Y%m%d-%H%M%S')-iter${i}.log"
+        log_msg=" (output: $output_file)"
+    else
+        output_file=$(mktemp -t ralph-loop.XXXXXX)
+        temp_logs+=("$output_file")
+        log_msg=""
+    fi
 
     claude_args=(-p "$prompt" --output-format stream-json --verbose --include-partial-messages)
     if [[ -n "$auto_mode" ]]; then
         claude_args+=(--permission-mode auto)
-        ralph "Running claude (auto mode)... (output: $output_file)"
+        ralph "Running claude (auto mode)...${log_msg}"
     else
         claude_args+=(--permission-mode acceptEdits)
         # shellcheck disable=SC2086
         for tool in $RALPH_ALLOWED_TOOLS; do
             claude_args+=(--allowedTools "$tool")
         done
-        ralph "Running claude... (output: $output_file)"
+        ralph "Running claude...${log_msg}"
     fi
     claude "${claude_args[@]}" \
         2>/dev/null \
@@ -170,11 +195,17 @@ for (( i=1; i<=max_iterations; i++ )); do
 
     if jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text' "$output_file" 2>/dev/null | grep -q '<promise>COMPLETE</promise>'; then
         ralph "Complete: promise COMPLETE received on iteration $i"
-        ralph "Log file: $output_file"
+        if [[ -n "$logs_dir" ]]; then
+            ralph "Log file: $output_file"
+        fi
         exit 0
     fi
 
-    ralph "Iteration $i complete (${duration}s) - log: $output_file"
+    if [[ -n "$logs_dir" ]]; then
+        ralph "Iteration $i complete (${duration}s) - log: $output_file"
+    else
+        ralph "Iteration $i complete (${duration}s)"
+    fi
 done
 
 ralph "Stopping: max iterations ($max_iterations) reached"
